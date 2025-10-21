@@ -1,0 +1,62 @@
+flowchart LR
+  %% Styling
+  classDef active stroke:#d62728,stroke-width:2px,color:#d62728
+  classDef wb stroke:#2ca02c,stroke-width:2px,color:#2ca02c
+  classDef ctrl fill:#e0f0ff,stroke:#1f77b4,color:#1f77b4,stroke-width:1px
+  classDef dim fill:#f2f2f2,stroke:#cccccc,color:#888,stroke-dasharray:3 3
+
+  subgraph IF[Instruction Fetch]
+    PC([PC]):::active -->|read address| IM[Instruction Memory]:::active
+  end
+
+  IM -->|Instruction[31:0]| ID[Decode / Control]:::active
+
+  %% Register field taps
+  IM -- "[25:21] rs" --> RF
+  IM -- "[20:16] rt" --> RF
+  IM -- "[15:0] imm" --> SE[Sign-extend]:::active
+
+  subgraph ID/EX[Register Read & Execute]
+    RF[Register File]:::active
+    M1{ALUSrc MUX}:::active
+    ALU[ALU (add)]:::active
+  end
+
+  %% Reads
+  RF -- "Read data 1 ($t2 = rs)" --> A1((ALU A)):::active
+  A1 --> ALU
+
+  %% ALUSrc MUX selects sign-extended immediate
+  RF -. "Read data 2 (rt)\n(unused by ALU for lw)" .-> M1:::dim
+  SE -- "sign-extended 32" --> M1
+  M1 -- "select imm (ALUSrc=1)" --> B1((ALU B)):::active
+  B1 --> ALU
+
+  %% Effective address
+  ALU -- "addr = $t2 + 32 (ALUOp=00 add)" --> DM[Data Memory]:::active
+
+  %% Memory read and write-back
+  DM -- "Read data (MemRead=1)" --> M2{MemtoReg MUX}:::active
+  M2 -- "select Mem (MemtoReg=1)" --> WD[(Write data)]:::wb
+  WD --> RF:::wb
+
+  %% Destination register select and other controls
+  ID -->|Control decode| CTL[Control Signals]:::ctrl
+  CTL -->|RegDst=0 (dest=rt=$t1)| RF
+  CTL -->|RegWrite=1| RF
+  CTL -->|MemRead=1| DM
+  CTL -.->|MemWrite=0| DM
+  CTL -.->|Branch=0| BR[Branch path (unused)]:::dim
+
+  %% Unused branch path
+  BR -. "Zero/AND/Adder" .- BMUX[PC Source MUX]:::dim
+
+  %% PC+4 (normal next PC, implied)
+  PC_NEXT[(PC+4 path)]:::dim --> PC
+
+  %% Notes
+  note1((( ))):::ctrl --- CTL
+  note1 -->|"ALUSrc=1"| M1
+  note1 -->|"ALUOp=00 (add)"| ALU
+  note1 -->|"MemtoReg=1"| M2
+  note1 -->|"RegDst=0 (rt=$t1)"| RF
